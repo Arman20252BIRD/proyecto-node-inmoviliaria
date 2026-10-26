@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Inmobiliaria UTM | Portal de Propiedades y Gestión</title>
+    <meta name="description" content="Plataforma inmobiliaria integral con autenticación 2FA, reconocimiento facial por webcam, Facebook OAuth y gestión administrativa de publicaciones.">
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- SimpleWebAuthn Browser -->
+    <script src="https://unpkg.com/@simplewebauthn/browser/dist/bundle/index.umd.min.js"></script>
+    <!-- Face-API.js para Detección Facial, Landmarks 68 y Reconocimiento Biométrico -->
+    <script src="js/face-api.min.js"></script>
+    <link rel="stylesheet" href="css/styles.css?v=3.1">
+</head>
+<body>
+    <!-- Toast Notifications -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <!-- Header / Navbar Minimalista -->
+    <header class="app-header">
+        <div class="header-container">
+            <a href="#" class="brand-link" id="brand-link">
+                <div class="brand-logo-mark">
+                    <i data-lucide="building-2"></i>
+                </div>
+                <div class="brand-text">
+                    <span class="brand-name">Inmobiliaria<strong>UTM</strong></span>
+                    <span class="brand-tag">Portal Inmobiliario</span>
+                </div>
+            </a>
+
+            <!-- Navegación Principal -->
+            <nav class="nav-menu">
+                <button class="nav-btn active" data-target="view-catalogo" id="tab-nav-catalogo">
+                    <i data-lucide="compass"></i> Explorar Casas
+                </button>
+                <button class="nav-btn" data-target="view-publicar" id="tab-nav-publicar">
+                    <i data-lucide="plus-circle"></i> Vender Propiedad
+                </button>
+                <button class="nav-btn hidden" data-target="view-mis-propiedades" id="tab-nav-mis-props">
+                    <i data-lucide="home"></i> Mis Publicaciones
+                </button>
+                <button class="nav-btn hidden" data-target="view-admin" id="tab-nav-admin">
+                    <i data-lucide="shield"></i> Administración <span class="badge-pill" id="nav-pending-badge">0</span>
+                </button>
+            </nav>
+
+            <!-- Acciones de Usuario -->
+            <div class="header-actions" id="header-user-actions">
+                <button class="btn btn-primary" onclick="abrirModal('modal-auth')">
+                    <i data-lucide="user"></i> Iniciar Sesión
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Contenedor Principal de Vistas -->
+    <main class="main-layout">
+
+        <!-- ==================== VISTA 1: CATÁLOGO PÚBLICO ==================== -->
+        <section id="view-catalogo" class="view-section active">
+            <!-- Barra de Búsqueda y Filtros Realistas -->
+            <div class="search-hero">
+                <div class="search-box">
+                    <div class="search-field">
+                        <label><i data-lucide="map-pin"></i> Ubicación o título</label>
+                        <input type="text" id="filtro-ubicacion" placeholder="Ej. Mérida, Norte, Altabrisa...">
+                    </div>
+                    <div class="search-divider"></div>
+                    <div class="search-field">
+                        <label><i data-lucide="dollar-sign"></i> Presupuesto máx.</label>
+                        <select id="filtro-precio">
+                            <option value="">Cualquier precio</option>
+                            <option value="2500000">Hasta $2,500,000 MXN</option>
+                            <option value="4500000">Hasta $4,500,000 MXN</option>
+                            <option value="7000000">Hasta $7,000,000 MXN</option>
+                            <option value="12000000">Hasta $12,000,000 MXN</option>
+                        </select>
+                    </div>
+                    <div class="search-divider"></div>
+                    <div class="search-field">
+                        <label><i data-lucide="bed"></i> Habitaciones</label>
+                        <select id="filtro-habitaciones">
+                            <option value="">Todas</option>
+                            <option value="1">1 o más</option>
+                            <option value="2">2 o más</option>
+                            <option value="3">3 o más</option>
+                            <option value="4">4 o más</option>
+                        </select>
+                    </div>
+                    <button class="btn btn-primary search-action-btn" id="btn-ejecutar-busqueda">
+                        <i data-lucide="search"></i> Buscar
+                    </button>
+                </div>
+            </div>
+
+            <!-- Listado de Inmuebles Aprobados -->
+            <div class="content-container">
+                <div class="catalog-header">
+                    <div>
+                        <h2>Propiedades Disponibles</h2>
+                        <p class="subtitle">Inmuebles autorizados y listos para compraventa directa</p>
+                    </div>
+                    <span class="results-count" id="results-count-text">Mostrando propiedades</span>
+                </div>
+
+                <div id="grid-propiedades" class="properties-grid">
+                    <div class="state-box">
+                        <div class="spinner"></div>
+                        <p>Cargando catálogo de propiedades...</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== VISTA 2: PUBLICAR PROPIEDAD ==================== -->
+        <section id="view-publicar" class="view-section">
+            <div class="content-container form-container">
+                <div class="card-panel">
+                    <div class="card-panel-header">
+                        <div>
+                            <h2>Publicar Casa en Venta</h2>
+                            <p class="subtitle">Ingresa la información detallada de la propiedad. La publicación pasará a revisión del administrador antes de mostrarse en el catálogo.</p>
+                        </div>
+                    </div>
+
+                    <div id="publicar-login-alert" class="alert-banner alert-warning hidden">
+                        <i data-lucide="alert-circle"></i>
+                        <div>
+                            <strong>Inicio de sesión requerido</strong>
+                            <p>Debes estar registrado e iniciar sesión para poder publicar una propiedad.</p>
+                        </div>
+                        <button class="btn btn-sm btn-dark" onclick="abrirModal('modal-auth')">Acceder</button>
+                    </div>
+
+                    <form id="form-publicar-propiedad" class="app-form">
+                        <div class="form-grid">
+                            <div class="form-group col-span-2">
+                                <label for="pub-titulo">Título de la propiedad *</label>
+                                <input type="text" id="pub-titulo" placeholder="Ej. Casa en Privada Residencial con Alberca" required>
+                            </div>
+
+                            <div class="form-group col-span-2">
+                                <label for="pub-ubicacion">Ubicación / Dirección aproximada *</label>
+                                <input type="text" id="pub-ubicacion" placeholder="Ej. Fracc. Montebello, Mérida, Yucatán" required>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="pub-precio">Precio de venta ($ MXN) *</label>
+                                <input type="number" id="pub-precio" min="10000" step="1000" placeholder="Ej. 3400000" required>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="pub-contacto">Contacto del vendedor (Teléfono / WhatsApp) *</label>
+                                <input type="text" id="pub-contacto" placeholder="Ej. Juan Pérez - 999 123 4567" required>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="pub-terreno">Superficie del terreno (m²)</label>
+                                <input type="number" id="pub-terreno" min="1" step="0.1" placeholder="Ej. 320" required>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="pub-construccion">Superficie de construcción (m²)</label>
+                                <input type="number" id="pub-construccion" min="1" step="0.1" placeholder="Ej. 250" required>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="pub-habs">Número de habitaciones</label>
+                                <input type="number" id="pub-habs" min="1" max="30" value="3" required>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="pub-banos">Número de baños</label>
+                                <input type="number" id="pub-banos" min="1" max="30" value="2" required>
+                            </div>
+
+                            <div class="form-group col-span-2">
+                                <label for="pub-descripcion">Descripción general del inmueble *</label>
+                                <textarea id="pub-descripcion" rows="4" placeholder="Detalla amenidades, distribución de la casa, acabados, servicios cercanos..." required></textarea>
+                            </div>
+                        </div>
+
+                        <!-- Sección de Fotografías Reales (Requisito: Mínimo 3 archivos de imagen) -->
+                        <div class="photos-block">
+                            <div class="photos-block-header">
+                                <div>
+                                    <label class="photos-title">Fotografías reales del inmueble (Mínimo 3 requeridas) *</label>
+                                    <p class="photos-sub">Selecciona los archivos de imágenes reales de la casa desde tu dispositivo (JPG, PNG o WebP).</p>
+                                </div>
+                                <span class="badge-status badge-pendiente" id="contador-fotos-seleccionadas">0 fotos seleccionadas</span>
+                            </div>
+
+                            <div class="upload-dropzone" onclick="document.getElementById('pub-fotos-archivos').click()">
+                                <i data-lucide="upload-cloud" style="width:36px; height:36px; color:var(--brand-primary); margin:0 auto 0.5rem; display:block;"></i>
+                                <p style="font-weight:600; font-size:0.95rem; margin-bottom:0.25rem;">Haz clic para seleccionar las imágenes reales de tu propiedad</p>
+                                <span style="font-size:0.8rem; color:var(--text-muted);">Puedes seleccionar múltiples imágenes a la vez (mínimo 3)</span>
+                                <input type="file" id="pub-fotos-archivos" multiple accept="image/jpeg,image/png,image/webp,image/jpg" style="display:none;" required>
+                            </div>
+
+                            <!-- Previsualización en miniatura de las fotos seleccionadas -->
+                            <div id="preview-archivos-fotos" class="preview-archivos-fotos hidden"></div>
+                        </div>
+
+                        <div class="form-actions">
+                            <button type="submit" class="btn btn-primary btn-lg" id="btn-submit-publicacion">
+                                <i data-lucide="send"></i> Guardar y Enviar para Autorización
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== VISTA 3: MIS PROPIEDADES ==================== -->
+        <section id="view-mis-propiedades" class="view-section">
+            <div class="content-container">
+                <div class="catalog-header">
+                    <div>
+                        <h2>Mis Publicaciones</h2>
+                        <p class="subtitle">Gestiona, edita o solicita la eliminación de tus propiedades en venta.</p>
+                    </div>
+                    <button class="btn btn-primary btn-sm" onclick="navegarA('view-publicar')">
+                        <i data-lucide="plus"></i> Nueva Propiedad
+                    </button>
+                </div>
+
+                <div id="mis-propiedades-container" class="my-properties-list">
+                    <div class="state-box">
+                        <div class="spinner"></div>
+                        <p>Cargando tus propiedades...</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ==================== VISTA 4: PANEL DE ADMINISTRACIÓN ==================== -->
+        <section id="view-admin" class="view-section">
+            <div class="content-container">
+                <div class="admin-top-bar">
+                    <div>
+                        <span class="admin-badge"><i data-lucide="shield-check"></i> Panel de Control Administrativo</span>
+                        <h2>Administración del Sistema Inmobiliario</h2>
+                        <p class="subtitle">Autoriza publicaciones antes de su difusión pública, supervisa usuarios y revisa estadísticas de la plataforma.</p>
+                    </div>
+                </div>
+
+                <!-- Tarjetas de Estadísticas Reales -->
+                <div class="stats-row" id="admin-stats-row">
+                    <div class="stat-card">
+                        <span class="stat-title">Usuarios Registrados</span>
+                        <span class="stat-value" id="stat-total-usuarios">-</span>
+                    </div>
+                    <div class="stat-card">
+                        <span class="stat-title">Total Propiedades</span>
+                        <span class="stat-value" id="stat-total-propiedades">-</span>
+                    </div>
+                    <div class="stat-card stat-pending">
+                        <span class="stat-title">Por Revisar (Pendientes)</span>
+                        <span class="stat-value" id="stat-pendientes">-</span>
+                    </div>
+                    <div class="stat-card stat-approved">
+                        <span class="stat-title">Aprobadas / Públicas</span>
+                        <span class="stat-value" id="stat-aprobadas">-</span>
+                    </div>
+                </div>
+
+                <!-- Sub-pestañas de Administración -->
+                <div class="admin-tabs">
+                    <button class="admin-tab-btn active" data-tab="admin-tab-publicaciones">
+                        <i data-lucide="file-check"></i> Control de Publicaciones
+                    </button>
+                    <button class="admin-tab-btn" data-tab="admin-tab-usuarios">
+                        <i data-lucide="users"></i> Control de Cuentas de Usuarios
+                    </button>
+                </div>
+
+                <!-- Sub-vista A: Publicaciones -->
+                <div id="admin-tab-publicaciones" class="admin-tab-content active">
+                    <div class="filter-pills-bar">
+                        <span class="filter-pills-label">Filtrar por estado:</span>
+                        <button class="pill-btn active" data-estado="">Todas</button>
+                        <button class="pill-btn" data-estado="pendiente">Pendientes</button>
+                        <button class="pill-btn" data-estado="aprobada">Aprobadas</button>
+                        <button class="pill-btn" data-estado="rechazada">Rechazadas</button>
+                    </div>
+
+                    <div id="admin-publicaciones-container" class="admin-table-container">
+                        <div class="state-box">
+                            <div class="spinner"></div>
+                            <p>Cargando publicaciones para revisión...</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Sub-vista B: Usuarios -->
+                <div id="admin-tab-usuarios" class="admin-tab-content">
+                    <div id="admin-usuarios-container" class="admin-table-container">
+                        <div class="state-box">
+                            <div class="spinner"></div>
+                            <p>Cargando lista de usuarios...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- ==================== MODALES DEL SISTEMA ==================== -->
+
+    <!-- 1. Modal Autenticación (Login, Registro Add User y Facebook Real) -->
+    <div id="modal-auth" class="modal-backdrop hidden">
+        <div class="modal-dialog auth-custom-card">
+            <button class="modal-close-btn" onclick="cerrarModal('modal-auth')">
+                <i data-lucide="x"></i>
+            </button>
+
+            <!-- Botones Superiores Register / Login (Idénticos a las capturas) -->
+            <div class="auth-top-pills-container">
+                <div class="auth-pill-group">
+                    <button type="button" class="auth-pill-btn" id="btn-tab-registro" onclick="cambiarAuthPestana('registro')">
+                        <i data-lucide="user-plus"></i> Register
+                    </button>
+                    <button type="button" class="auth-pill-btn active" id="btn-tab-login" onclick="cambiarAuthPestana('login')">
+                        <i data-lucide="log-in"></i> Login
+                    </button>
+                </div>
+            </div>
+
+            <!-- ==================== FORMULARIO LOGIN (Captura 2 y 3) ==================== -->
+            <div id="card-login-view" class="auth-card-body">
+                <h2 class="auth-title-custom">Login</h2>
+
+                <form id="form-login" class="dialog-form">
+                    <div class="form-group">
+                        <label for="login-correo">Username:</label>
+                        <input type="text" id="login-correo" placeholder="Cristian o correo@gmail.com" autocomplete="username" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="login-pass">Password:</label>
+                        <input type="password" id="login-pass" placeholder="••••" autocomplete="current-password" required>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary btn-block btn-lg" id="btn-submit-login">
+                        <i data-lucide="log-in"></i> Login
+                    </button>
+
+                    <div class="divider-text"><span>o continúa con tu red social</span></div>
+
+                    <div class="social-login-actions">
+                        <a href="/api/auth/facebook" class="btn btn-facebook btn-block">
+                            <i data-lucide="facebook"></i> Continuar con Facebook
+                        </a>
+                    </div>
+                </form>
+
+                <!-- Sección Facial Recognition con botón Activate Camera (Capturas 2 y 3) -->
+                <div class="facial-recognition-section">
+                    <h3 class="facial-recognition-heading">Facial Recognition</h3>
+                    <button type="button" class="btn btn-camera-activate btn-block" id="btn-activate-camera-login">
+                        <i data-lucide="camera"></i> Activate Camera
+                    </button>
+
+                    <!-- Viewport de la cámara web con overlay canvas de landmarks (Captura 3) -->
+                    <div id="login-camera-container" class="login-camera-container hidden">
+                        <div class="login-camera-viewport">
+                            <video id="login-facial-video" autoplay playsinline muted></video>
+                            <canvas id="login-facial-canvas"></canvas>
+                        </div>
+                        <div id="login-facial-status" class="login-facial-status-bar">
+                            <span class="status-pulse-dot"></span>
+                            <span id="login-facial-status-text">Cargando modelos de IA y cámara web...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ==================== FORMULARIO ADD USER (Captura 1) ==================== -->
+            <div id="card-registro-view" class="auth-card-body hidden">
+                <h2 class="auth-title-custom">Add User</h2>
+
+                <form id="form-registro" class="dialog-form">
+                    <div class="form-group">
+                        <label for="reg-nombre">Username:</label>
+                        <input type="text" id="reg-nombre" placeholder="Cristian" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="reg-correo">Correo electrónico (Gmail / Institucional):</label>
+                        <input type="email" id="reg-correo" placeholder="cristian@gmail.com" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="reg-telefono">Teléfono de contacto:</label>
+                        <input type="tel" id="reg-telefono" placeholder="+52 999 123 4567" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="reg-pass">Password:</label>
+                        <input type="password" id="reg-pass" minlength="8" placeholder="••••" required>
+                        <span class="form-help-hint">Mínimo 8 caracteres cifrados con hash seguro Bcrypt.</span>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="reg-confirm-pass">Confirm Password:</label>
+                        <input type="password" id="reg-confirm-pass" minlength="8" placeholder="••••" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="reg-rol">Rol en el sistema:</label>
+                        <select id="reg-rol" required>
+                            <option value="usuario">Usuario / Vendedor (Publicar inmuebles)</option>
+                            <option value="administrador">Administrador (Validar y autorizar)</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="reg-foto-archivo">Photo:</label>
+                        <div class="custom-file-input-wrapper">
+                            <input type="file" id="reg-foto-archivo" accept="image/jpeg,image/png,image/webp,image/jpg" required>
+                        </div>
+                        <!-- Vista previa y análisis del rostro de la fotografía subida -->
+                        <div id="reg-foto-preview-box" class="foto-preview-box hidden">
+                            <img id="reg-foto-preview-img" src="" alt="Foto" class="reg-foto-thumb">
+                            <div class="foto-analisis-text">
+                                <strong id="reg-foto-status-badge" class="badge-status badge-pendiente">Analizando rostro...</strong>
+                                <p id="reg-foto-status-desc" style="font-size:0.75rem; color:var(--text-muted); margin-top:0.2rem;">Detectando puntos faciales para activar el 2FA biométrico</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary btn-block btn-lg" id="btn-submit-registro">
+                        <i data-lucide="user-plus"></i> Add User
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- 2. Modal VERIFICACIÓN FACIAL 2FA POR WEBCAM (REAL) -->
+    <div id="modal-2fa-facial" class="modal-backdrop hidden">
+        <div class="modal-dialog modal-camera-dialog">
+            <button class="modal-close-btn" onclick="cerrarModalFacial()">
+                <i data-lucide="x"></i>
+            </button>
+
+            <div class="camera-dialog-header">
+                <div class="camera-icon-badge"><i data-lucide="scan-face"></i></div>
+                <h3>Segundo Factor Requerido (2FA)</h3>
+                <p class="subtitle">Identidad protegida: coloca tu rostro frente a la cámara web en vivo para autorizar tu acceso.</p>
+            </div>
+
+            <!-- Contenedor de Video de Webcam -->
+            <div class="webcam-viewport">
+                <video id="webcam-verificar-video" autoplay playsinline muted></video>
+                <canvas id="webcam-verificar-canvas" class="hidden"></canvas>
+                
+                <!-- Guía visual Face ID -->
+                <div class="face-guide-overlay">
+                    <div class="face-oval"></div>
+                    <div class="scan-laser"></div>
+                </div>
+                <div class="webcam-live-indicator"><span class="dot"></span> CÁMARA ACTIVA</div>
+            </div>
+
+            <p class="camera-help-text">
+                Ubícate de frente a la cámara con buena iluminación y mantén la mirada en el marco central.
+            </p>
+
+            <div class="camera-dialog-actions">
+                <button type="button" class="btn btn-primary btn-block btn-lg" id="btn-escanear-verificar-rostro">
+                    <i data-lucide="camera"></i> Escanear y Verificar mi Rostro
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 3. Modal REGISTRAR ROSTRO FACIAL 2FA (WEBCAM) -->
+    <div id="modal-registro-facial" class="modal-backdrop hidden">
+        <div class="modal-dialog modal-camera-dialog">
+            <button class="modal-close-btn" onclick="cerrarModalRegistroFacial()">
+                <i data-lucide="x"></i>
+            </button>
+
+            <div class="camera-dialog-header">
+                <div class="camera-icon-badge"><i data-lucide="user-check"></i></div>
+                <h3 id="registro-facial-title">Activar Reconocimiento Facial (2FA)</h3>
+                <p class="subtitle" id="registro-facial-subtitle">Capturaremos el descriptor biométrico criptográfico de tu rostro para proteger tu cuenta.</p>
+            </div>
+
+            <!-- Contenedor Webcam Registro -->
+            <div class="webcam-viewport">
+                <video id="webcam-registro-video" autoplay playsinline muted></video>
+                <canvas id="webcam-registro-canvas" class="hidden"></canvas>
+                
+                <div class="face-guide-overlay">
+                    <div class="face-oval"></div>
+                </div>
+                <div class="webcam-live-indicator"><span class="dot"></span> CÁMARA ACTIVA</div>
+            </div>
+
+            <p class="camera-help-text">
+                Mira de frente a la cámara web para capturar y hashear tu vector biométrico en la base de datos.
+            </p>
+
+            <div class="camera-dialog-actions">
+                <button type="button" class="btn btn-primary btn-block btn-lg" id="btn-capturar-registrar-rostro">
+                    <i data-lucide="scan"></i> Capturar y Guardar Rostro Facial
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 4. Modal Mi Perfil de Usuario y Resumen de Datos -->
+    <div id="modal-perfil" class="modal-backdrop hidden">
+        <div class="modal-dialog modal-perfil-card">
+            <button class="modal-close-btn" onclick="cerrarModal('modal-perfil')">
+                <i data-lucide="x"></i>
+            </button>
+
+            <div class="dialog-header">
+                <div>
+                    <h3 style="font-size:1.3rem; font-weight:700; color:#0F172A;">Mi Perfil y Resumen de Cuenta</h3>
+                    <p class="subtitle">Datos del usuario registrado y estado de autenticación biométrica (2FA).</p>
+                </div>
+            </div>
+
+            <!-- Tarjeta Visual del Perfil con Fotografía Oficial del Registro -->
+            <div class="profile-hero-card">
+                <div class="profile-avatar-container">
+                    <img id="perfil-avatar-preview" src="" alt="Avatar" class="profile-avatar-img">
+                </div>
+                <div class="profile-hero-info">
+                    <h4 id="perfil-hero-nombre" class="profile-hero-name">Cargando...</h4>
+                    <span id="perfil-hero-rol" class="badge-role">Usuario</span>
+                    <p id="perfil-hero-correo" class="profile-hero-email"><i data-lucide="mail"></i> correo@dominio.com</p>
+                </div>
+            </div>
+
+            <!-- Estado de Autenticación de Dos Factores (2FA Facial) -->
+            <div id="perfil-2fa-status-card" class="profile-2fa-banner active">
+                <div class="banner-icon"><i data-lucide="scan-face" id="perfil-2fa-icon"></i></div>
+                <div class="banner-body">
+                    <div class="banner-title" id="perfil-2fa-title">Reconocimiento Facial (2FA)</div>
+                    <div class="banner-desc" id="perfil-2fa-desc">Tu rostro está vinculado con éxito con la fotografía tomada en tu registro.</div>
+                </div>
+                <div class="banner-action" id="perfil-2fa-action">
+                    <span class="badge-status badge-aprobada" style="display:inline-flex; align-items:center; gap:0.35rem; font-size:0.8rem; padding:0.4rem 0.75rem;">
+                        <i data-lucide="check-circle-2" style="width:14px; height:14px;"></i> 2FA Activo
+                    </span>
+                </div>
+            </div>
+
+            <form id="form-actualizar-perfil" class="dialog-form" style="margin-top: 1.25rem;">
+                <div class="form-grid">
+                    <div class="form-group col-span-2">
+                        <label for="perfil-nombre"><i data-lucide="user"></i> Nombre completo *</label>
+                        <input type="text" id="perfil-nombre" required placeholder="Tu nombre">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="perfil-correo"><i data-lucide="mail"></i> Correo electrónico (solo lectura)</label>
+                        <input type="email" id="perfil-correo" disabled class="input-disabled">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="perfil-telefono"><i data-lucide="phone"></i> Teléfono de contacto *</label>
+                        <input type="tel" id="perfil-telefono" required placeholder="+52 999 123 4567">
+                    </div>
+
+                    <div class="form-group col-span-2 password-change-section">
+                        <label style="font-weight:600; font-size:0.85rem;"><i data-lucide="lock"></i> Cambiar Contraseña (opcional)</label>
+                        <div class="form-grid" style="margin-top: 0.4rem;">
+                            <input type="password" id="perfil-pass-actual" placeholder="Contraseña actual" autocomplete="current-password">
+                            <input type="password" id="perfil-pass-nueva" minlength="8" placeholder="Nueva contraseña (mín. 8 car.)" autocomplete="new-password">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="modal-form-actions">
+                    <button type="button" class="btn btn-outline" onclick="cerrarModal('modal-perfil')">Cerrar</button>
+                    <button type="submit" class="btn btn-primary" id="btn-guardar-perfil">
+                        <i data-lucide="save"></i> Guardar Cambios
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 5. Modal Detalle de Propiedad -->
+    <div id="modal-detalle-propiedad" class="modal-backdrop hidden">
+        <div class="modal-dialog modal-lg">
+            <button class="modal-close-btn" onclick="cerrarModal('modal-detalle-propiedad')">
+                <i data-lucide="x"></i>
+            </button>
+            <div id="detalle-propiedad-body">
+                <!-- Se inyecta dinámicamente -->
+            </div>
+        </div>
+    </div>
+
+    <!-- 6. Modal Editar Propiedad -->
+    <div id="modal-editar-propiedad" class="modal-backdrop hidden">
+        <div class="modal-dialog modal-lg">
+            <button class="modal-close-btn" onclick="cerrarModal('modal-editar-propiedad')">
+                <i data-lucide="x"></i>
+            </button>
+            <div class="dialog-header">
+                <h3>Editar Propiedad</h3>
+                <p class="subtitle">Modifica la información o fotografías de tu publicación.</p>
+            </div>
+            <form id="form-editar-propiedad" class="dialog-form">
+                <input type="hidden" id="edit-id">
+                <div class="form-grid">
+                    <div class="form-group col-span-2">
+                        <label for="edit-titulo">Título *</label>
+                        <input type="text" id="edit-titulo" required>
+                    </div>
+                    <div class="form-group col-span-2">
+                        <label for="edit-ubicacion">Ubicación *</label>
+                        <input type="text" id="edit-ubicacion" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-precio">Precio ($ MXN) *</label>
+                        <input type="number" id="edit-precio" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-contacto">Contacto vendedor *</label>
+                        <input type="text" id="edit-contacto" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-habs">Habitaciones</label>
+                        <input type="number" id="edit-habs" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-banos">Baños</label>
+                        <input type="number" id="edit-banos" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-terreno">Terreno (m²)</label>
+                        <input type="number" id="edit-terreno" step="0.1" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-construccion">Construcción (m²)</label>
+                        <input type="number" id="edit-construccion" step="0.1" required>
+                    </div>
+                    <div class="form-group col-span-2">
+                        <label for="edit-descripcion">Descripción *</label>
+                        <textarea id="edit-descripcion" rows="3" required></textarea>
+                    </div>
+                    <div class="form-group col-span-2">
+                        <label for="edit-fotos-archivos">Nuevas fotografías reales (Mínimo 3 archivos para reemplazar fotos actuales)</label>
+                        <input type="file" id="edit-fotos-archivos" multiple accept="image/jpeg,image/png,image/webp,image/jpg">
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-primary btn-block">
+                    Guardar y Actualizar Propiedad
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Footer Limpio y Profesional -->
+    <footer class="app-footer">
+        <div class="footer-credits">
+            <p>© 2026 Inmobiliaria UTM. Todos los derechos reservados.</p>
+        </div>
+    </footer>
+
+    <!-- App Logic -->
+    <script src="js/app.js?v=3.1"></script>
+</body>
+</html>
